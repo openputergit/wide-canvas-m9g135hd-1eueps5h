@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Virtual Tour Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.skypack.dev/@tensorflow/tfjs"></script>
+    <script src="https://cdn.skypack.dev/@tensorflow-models/mobilenet"></script>
+
+    <style>
+        .neu-brutal {
+            border: 3px solid #000;
+            box-shadow: 5px 5px 0px #000;
+            transition: all 0.2s ease;
+        }
+        .neu-brutal:active {
+            box-shadow: 2px 2px 0px #000;
+            transform: translate(3px, 3px);
+        }
+        #video {
+            transform: scaleX(-1);
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-[#B8E2F2] min-h-screen p-4">
+    <div class="max-w-3xl mx-auto">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold mb-2 neu-brutal bg-white p-4 inline-block">AI Tour Guide 🎨</h1>
+        </header>
+
+        <!-- Main Content -->
+        <div class="space-y-6">
+            <!-- Camera View -->
+            <div class="relative">
+                <video id="video" class="w-full h-[60vh] object-cover neu-brutal bg-gray-100" autoplay playsinline></video>
+                <canvas id="canvas" class="hidden"></canvas>
+                
+                <!-- Loading State -->
+                <div id="loading" class="hidden absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div class="text-white">
+                        <i class="bi bi-arrow-repeat text-4xl loading-spinner"></i>
+                        <p class="mt-2">Analyzing...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex gap-4 flex-wrap">
+                <button id="startCamera" class="neu-brutal bg-[#FFD700] px-6 py-3 font-bold">
+                    <i class="bi bi-camera-fill"></i> Start Camera
+                </button>
+                <button id="stopCamera" class="neu-brutal bg-[#FF6B6B] px-6 py-3 font-bold hidden">
+                    <i class="bi bi-stop-fill"></i> Stop Camera
+                </button>
+            </div>
+
+            <!-- Results Panel -->
+            <div id="results" class="neu-brutal bg-white p-6 space-y-4 hidden">
+                <h2 class="text-2xl font-bold">Monument Information</h2>
+                <div id="monumentInfo" class="space-y-2">
+                    <p class="text-lg" id="monumentName"></p>
+                    <p id="monumentDescription"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const monumentData = {
+            'taj mahal': {
+                name: 'Taj Mahal',
+                description: 'The Taj Mahal is an ivory-white marble mausoleum on the right bank of the river Yamuna in Agra, India. It was commissioned in 1632 by the Mughal emperor Shah Jahan to house the tomb of his favorite wife, Mumtaz Mahal.'
+            },
+            'palace': {
+                name: 'Historic Palace',
+                description: 'This is a historic palace featuring remarkable architecture and cultural significance.'
+            },
+            'monument': {
+                name: 'Monument',
+                description: 'A significant historical monument that represents important cultural heritage.'
+            }
+        };
+
+        let video;
+        let model;
+        let isAnalyzing = false;
+        const predictionThreshold = 0.5;
+
+        async function loadModel() {
+            try {
+                model = await mobilenet.load();
+                console.log('Model loaded successfully');
+            } catch (error) {
+                console.error('Error loading model:', error);
+            }
+        }
+
+        async function setupCamera() {
+            video = document.getElementById('video');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                video.srcObject = stream;
+                document.getElementById('startCamera').classList.add('hidden');
+                document.getElementById('stopCamera').classList.remove('hidden');
+                startAnalysis();
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+            }
+        }
+
+        function stopCamera() {
+            const stream = video.srcObject;
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+            document.getElementById('startCamera').classList.remove('hidden');
+            document.getElementById('stopCamera').classList.add('hidden');
+            document.getElementById('results').classList.add('hidden');
+            isAnalyzing = false;
+        }
+
+        async function analyzeFrame() {
+            if (!isAnalyzing || !model) return;
+
+            try {
+                document.getElementById('loading').classList.remove('hidden');
+                const predictions = await model.classify(video);
+                document.getElementById('loading').classList.add('hidden');
+
+                predictions.forEach(prediction => {
+                    const label = prediction.className.toLowerCase();
+                    if (prediction.probability > predictionThreshold) {
+                        for (const [key, data] of Object.entries(monumentData)) {
+                            if (label.includes(key)) {
+                                showMonumentInfo(data);
+                                return;
+                            }
+                        }
+                    }
+                });
+
+                if (isAnalyzing) {
+                    setTimeout(() => requestAnimationFrame(analyzeFrame), 1000);
+                }
+            } catch (error) {
+                console.error('Error during analysis:', error);
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        function showMonumentInfo(data) {
+            const resultsPanel = document.getElementById('results');
+            document.getElementById('monumentName').textContent = data.name;
+            document.getElementById('monumentDescription').textContent = data.description;
+            resultsPanel.classList.remove('hidden');
+        }
+
+        function startAnalysis() {
+            isAnalyzing = true;
+            analyzeFrame();
+        }
+
+        // Event Listeners
+        document.getElementById('startCamera').addEventListener('click', setupCamera);
+        document.getElementById('stopCamera').addEventListener('click', stopCamera);
+
+        // Initialize
+        loadModel();
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
